@@ -95,7 +95,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 # Do NOT add "*" — that defeats auth header checks
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin],   # ← change via FRONTEND_ORIGIN env var
+    allow_origins=["*"],   # ← change via FRONTEND_ORIGIN env var
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
