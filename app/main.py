@@ -95,7 +95,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 # Do NOT add "*" — that defeats auth header checks
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # ← change via FRONTEND_ORIGIN env var
+    allow_origins=[
+        "http://localhost:5173",
+        "https://kahani-events-lms-frontend-l5zr5ikcn.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
