@@ -97,7 +97,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
-        "https://kahani-events-lms-frontend-l5zr5ikcn.vercel.app"
+        "kahani-events-lms-frontend.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
