@@ -57,6 +57,7 @@ class VideoCreateRequest(BaseModel):
     course_id: str
     title: str
     video_url: str
+    transcript: Optional[str] = None
 
     @field_validator("title")
     @classmethod
@@ -98,6 +99,7 @@ class VideoCreateResponse(BaseModel):
     course_id: str
     title: str
     video_url: str
+    transcript: Optional[str] = None
     created_at: datetime
 
 
@@ -173,4 +175,7 @@ class QuestionOut(BaseModel):
     question: str
     options: list[str]
     correct_option_index: int
+    question_type: Optional[str] = "mcq"
+    correct_answer: Optional[str] = None
+    explanation: Optional[str] = None
     created_at: datetime

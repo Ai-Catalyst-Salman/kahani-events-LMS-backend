@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     supabase_url: str
     supabase_service_role_key: str
+    gemini_api_key: str | None = None
 
     # CORS origin — change this env var (not the code) when deploying.
     # For production, set FRONTEND_ORIGIN to your deployed frontend URL,

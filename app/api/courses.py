@@ -45,7 +45,7 @@ async def get_course(course_id: str):
 
     videos_response = (
         supabase.table("videos")
-        .select("id, course_id, title, video_url, created_at")
+        .select("id, course_id, title, video_url, transcript, created_at")
         .eq("course_id", course_id)
         .order("created_at")
         .execute()

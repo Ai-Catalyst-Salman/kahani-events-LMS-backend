@@ -120,6 +120,7 @@ async def create_video(
             "course_id": body.course_id,
             "title": body.title,
             "video_url": body.video_url,
+            "transcript": body.transcript,
         })
         .execute()
     )
@@ -214,6 +215,9 @@ async def create_question(
             "question": body.question,
             "options": body.options,
             "correct_option_index": body.correct_option_index,
+            "question_type": body.question_type,
+            "correct_answer": body.correct_answer,
+            "explanation": body.explanation,
         })
         .execute()
     )
@@ -254,6 +258,9 @@ async def update_question(
             "question": body.question,
             "options": body.options,
             "correct_option_index": body.correct_option_index,
+            "question_type": body.question_type,
+            "correct_answer": body.correct_answer,
+            "explanation": body.explanation,
         })
         .eq("id", question_id)
         .execute()

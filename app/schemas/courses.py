@@ -13,6 +13,7 @@ class VideoOut(BaseModel):
     course_id: str
     title: str
     video_url: str
+    transcript: str | None = None
     created_at: datetime
 
 

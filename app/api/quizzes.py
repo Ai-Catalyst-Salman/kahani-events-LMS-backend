@@ -164,3 +164,219 @@ async def get_quiz(
         )
 
     return QuizOut(**quiz)
+
+
+from app.schemas.quiz_schemas import AIQuizGenerateRequest
+from app.services.ai_quiz_service import generate_mixed_quiz
+
+@router.post("/video/{video_id}/generate-and-save-quiz")
+async def generate_and_save_quiz(
+    video_id: str,
+    request: AIQuizGenerateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Generate questions using Gemini based on a transcript and save them to Supabase.
+    """
+    try:
+        # Generate the questions
+        questions = await generate_mixed_quiz(transcript=request.transcript)
+        
+        # Map for DB insert
+        db_inserts = []
+        for q in questions:
+            # Maintain backward compatibility for submit_quiz by calculating correct_option_index
+            correct_index = -1
+            if q.question_type in ["mcq", "true_false"]:
+                try:
+                    correct_index = q.options.index(q.correct_answer)
+                except ValueError:
+                    correct_index = 0 # Fallback in case of weird mismatch
+            
+            db_inserts.append({
+                "video_id": video_id,
+                "question": q.question,
+                "question_type": q.question_type,
+                "options": q.options,
+                "correct_option_index": correct_index,
+                "correct_answer": q.correct_answer,
+                "explanation": q.explanation
+            })
+            
+        # Bulk insert
+        if db_inserts:
+            supabase.table("video_questions").insert(db_inserts).execute()
+            
+        return {"message": "Quiz generated and saved successfully", "questions": db_inserts}
+        
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to generate and save quiz: {str(e)}")
+
+import time
+
+# Simple in-memory rate limiting dictionary to prevent DoS via spamming AI endpoints
+# Format: { user_id: last_request_timestamp }
+_generate_rate_limit = {}
+COOLDOWN_SECONDS = 30
+
+class GenerateAssignQuizRequest(BaseModel):
+    user_id: str
+
+@router.post("/video/{video_id}/generate-and-assign-quiz")
+async def generate_and_assign_quiz(
+    video_id: str,
+    request: GenerateAssignQuizRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Generate a unique mixed quiz on the fly and assign it to the user with an audit trail.
+    """
+    req_user_id = request.user_id or current_user["id"]
+    
+    # [SECURITY FIX: IDOR] Prevent users from generating quizzes for other users
+    if req_user_id != current_user["id"] and current_user.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to perform this action.")
+        
+    # [SECURITY FIX: DOS/Rate Limiting] Enforce a cooldown to prevent AI quota exhaustion
+    now = time.time()
+    last_req_time = _generate_rate_limit.get(req_user_id, 0)
+    if now - last_req_time < COOLDOWN_SECONDS:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=f"Please wait {int(COOLDOWN_SECONDS - (now - last_req_time))} seconds before generating another quiz.")
+    
+    _generate_rate_limit[req_user_id] = now
+    
+    # 1. Fetch the video transcript from DB
+    video_resp = supabase.table("videos").select("transcript").eq("id", video_id).single().execute()
+    if not video_resp.data or not video_resp.data.get("transcript"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video or transcript not found")
+        
+    transcript = video_resp.data["transcript"]
+    
+    try:
+        # 2. Call AI service to generate a unique quiz
+        questions = await generate_mixed_quiz(transcript=transcript)
+        json_questions = [q.model_dump() for q in questions]
+        
+        # 3. Insert into quiz_attempts
+        attempt_resp = supabase.table("quiz_attempts").insert({
+            "user_id": req_user_id,
+            "video_id": video_id,
+            "generated_questions": json_questions
+        }).execute()
+        
+        if not attempt_resp.data:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save quiz attempt")
+            
+        # 4. Return to frontend
+        return {
+            "quiz_attempt_id": attempt_resp.data[0]["id"],
+            "questions": json_questions
+        }
+    except Exception as e:
+        # [SECURITY FIX: DATA LEAKAGE] Sanitize the error message so stack traces don't leak to the client
+        print(f"Error in generate_and_assign_quiz: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal error occurred while generating the quiz. Please try again.")
+
+class SubmitAttemptRequest(BaseModel):
+    quiz_attempt_id: str
+    student_answers: dict
+
+@router.post("/submit-attempt")
+async def submit_attempt(
+    request: SubmitAttemptRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Evaluate student answers against the saved AI generated quiz attempt.
+    """
+    # 1. Fetch original quiz attempt
+    attempt_resp = supabase.table("quiz_attempts").select("*").eq("id", request.quiz_attempt_id).single().execute()
+    if not attempt_resp.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz attempt not found")
+        
+    attempt = attempt_resp.data
+    user_id = attempt["user_id"]
+    generated_questions = attempt["generated_questions"]
+    
+    # Ensure current user owns this attempt (or is admin)
+    if user_id != current_user["id"] and current_user.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to submit this attempt")
+    
+    # 2. Evaluate answers
+    score = 0
+    total = len(generated_questions)
+    results = []
+    
+    for i, q in enumerate(generated_questions):
+        student_ans = request.student_answers.get(str(i))
+        q_type = q.get("question_type", "mcq")
+        is_correct = False
+        
+        if student_ans is not None:
+            user_ans_str = ""
+            if q_type == "mcq":
+                try:
+                    idx = int(student_ans)
+                    opts = q.get("options", [])
+                    if 0 <= idx < len(opts):
+                        user_ans_str = opts[idx]
+                except (ValueError, TypeError):
+                    pass
+            elif q_type == "true_false":
+                try:
+                    idx = int(student_ans)
+                    if idx == 0:
+                        user_ans_str = "True"
+                    elif idx == 1:
+                        user_ans_str = "False"
+                except (ValueError, TypeError):
+                    pass
+            else:
+                user_ans_str = str(student_ans)
+                
+            correct_ans_str = str(q.get("correct_answer", ""))
+            is_correct = user_ans_str.strip().lower() == correct_ans_str.strip().lower()
+        if is_correct:
+            score += 1
+            
+        results.append({
+            "question_index": i,
+            "is_correct": is_correct,
+            "correct_answer": q.get("correct_answer"),
+            "explanation": q.get("explanation")
+        })
+        
+    # 3. Save to quiz_scores
+    score_resp = supabase.table("quiz_scores").insert({
+        "quiz_attempt_id": request.quiz_attempt_id,
+        "user_id": user_id,
+        "score": score,
+        "total_questions": total
+    }).execute()
+    
+    if not score_resp.data:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save quiz score")
+        
+    pass_threshold = max(1, round(total * 0.67))
+    passed = score >= pass_threshold
+    
+    # 4. If passed, mark the video as completed
+    if passed:
+        supabase.table("progress").upsert(
+            {
+                "user_id": user_id,
+                "video_id": attempt["video_id"],
+                "completed": True,
+            },
+            on_conflict="user_id,video_id"
+        ).execute()
+
+    return {
+        "score": score,
+        "total": total,
+        "passed": passed,
+        "pass_threshold": pass_threshold,
+        "results": results
+    }
