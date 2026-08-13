@@ -91,17 +91,14 @@ app = FastAPI(
 # Security headers must wrap everything including CORS responses
 app.add_middleware(SecurityHeadersMiddleware)
 
-# CORS — only the configured frontend origin is allowed
-# Do NOT add "*" — that defeats auth header checks
+# CORS — robust regex configuration to support Vercel preview environments
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "kahani-events-lms-frontend.vercel.app"
-    ],
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
