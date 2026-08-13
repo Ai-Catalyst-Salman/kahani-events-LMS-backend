@@ -35,8 +35,15 @@ async def generate_quiz_from_transcript(transcript: str) -> QuizGenerationResult
     # We instruct the model to ignore any commands inside the transcript.
     prompt = f"""
     You are an expert educational AI. Generate a quiz based on the following video transcript.
-    Generate EXACTLY 5 completely random and unique questions. Do NOT repeat typical questions. Pick diverse parts of the transcript to test.
-    The quiz must include a RANDOM MIX of MCQ, True/False, and Fill-in-the-blank questions.
+    
+    CRITICAL RULES:
+    1. CHRONOLOGICAL SEQUENCE: The questions MUST strictly follow the chronological flow of the transcript. The first question should relate to the beginning of the video, the middle questions to the middle, and the final question to the end. Do not randomize the timeline.
+    2. DYNAMIC QUESTION COUNT: Analyze the length and information density of the provided transcript. You MUST dynamically adjust the total number of questions generated based on this strict scale:
+       - For short transcripts (approx. under 10 minutes or < 1500 words): Generate between 5 to 7 questions.
+       - For long transcripts (approx. 10 to 15 minutes or 1500 to 2500 words): Generate between 10 to 12 questions.
+       - For very long/dense transcripts (approx. 15+ minutes or > 2500 words): Generate between 12 to 15 questions.
+       CRITICAL: Do NOT default to 5 questions. Evaluate the text length first, decide the target number from the scale above, and ensure they follow the chronological sequence of the transcript.
+    3. QUESTION VARIETY: The quiz must include a RANDOM MIX of MCQ, True/False, and Fill-in-the-blank questions. Do NOT repeat typical questions.
     Return ONLY a valid JSON object matching this schema:
     {{
         "questions": [
