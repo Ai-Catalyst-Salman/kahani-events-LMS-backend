@@ -26,11 +26,15 @@ from app.schemas.admin import (
     VideoCreateRequest,
     VideoCreateResponse,
     UserOut,
+    UserCreateRequest,
+    UserUpdateRequest,
     UserRoleUpdateRequest,
     UserRoleUpdateResponse,
     QuestionCreateRequest,
     QuestionUpdateRequest,
     QuestionOut,
+    WatchHistoryResponse,
+    WatchedVideo,
 )
 
 router = APIRouter()
@@ -169,6 +173,139 @@ async def list_users(admin_user: dict = Depends(require_admin)):
             )
         )
     return result
+
+
+@router.post("/users", response_model=UserOut, status_code=201)
+async def create_user(
+    body: UserCreateRequest,
+    admin_user: dict = Depends(require_admin),
+):
+    """Create a new user using Supabase Admin API."""
+    try:
+        # 1. Create auth user
+        new_user = supabase.auth.admin.create_user({
+            "email": body.email,
+            "password": body.password,
+            "email_confirm": True
+        })
+        user_id = new_user.user.id
+        
+        # 2. Update their role (handle_new_user trigger creates them as 'learner')
+        if body.role == "admin":
+            supabase.table("user_roles").update({"role": body.role}).eq("user_id", user_id).execute()
+        
+        return UserOut(
+            id=user_id,
+            email=body.email,
+            role=body.role,
+            created_at=new_user.user.created_at
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/users/{user_id}/credentials", response_model=dict)
+async def update_user_credentials(
+    user_id: str,
+    body: UserUpdateRequest,
+    admin_user: dict = Depends(require_admin),
+):
+    """Update a user's email or password."""
+    updates = {}
+    if body.email:
+        updates["email"] = body.email
+    if body.password:
+        updates["password"] = body.password
+        
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields provided to update")
+
+    try:
+        supabase.auth.admin.update_user_by_id(user_id, updates)
+        return {"message": "User updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def delete_user(
+    user_id: str,
+    admin_user: dict = Depends(require_admin),
+):
+    """Delete a user from the system."""
+    if user_id == admin_user["id"]:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+        
+    try:
+        supabase.auth.admin.delete_user(user_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/users/{user_id}/watched-videos", response_model=WatchHistoryResponse)
+async def get_user_watch_history(
+    user_id: str,
+    admin_user: dict = Depends(require_admin),
+):
+    """Get the dynamic watch history for a specific user using Supabase PostgreSQL."""
+    # 1. Fetch user email for the modal header
+    user_name = "Unknown User"
+    try:
+        # Service role needed to read auth.users
+        auth_resp = supabase.auth.admin.get_user_by_id(user_id)
+        if auth_resp and auth_resp.user:
+            user_name = auth_resp.user.email.split("@")[0]
+    except Exception:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    # 2. Fetch completed video progress for this user
+    progress_resp = (
+        supabase.table("progress")
+        .select("video_id")
+        .eq("user_id", user_id)
+        .eq("completed", True)
+        .execute()
+    )
+    progress_data = progress_resp.data or []
+    
+    if not progress_data:
+        return WatchHistoryResponse(
+            success=True,
+            user_name=user_name,
+            total_watched=0,
+            watched_videos=[]
+        )
+
+    watched_video_ids = [p["video_id"] for p in progress_data]
+
+    # 3. Fetch matched videos along with course (module) title
+    videos_resp = (
+        supabase.table("videos")
+        .select("id, title, courses(title)")
+        .in_("id", watched_video_ids)
+        .execute()
+    )
+    videos = videos_resp.data or []
+
+    # 4. Format the response
+    watched_videos_list = []
+    for v in videos:
+        course_data = v.get("courses")
+        module_name = course_data.get("title", "General") if isinstance(course_data, dict) else "General"
+        
+        watched_videos_list.append(WatchedVideo(
+            video_id=v["id"],
+            title=v.get("title", "Untitled Video"),
+            module_name=module_name,
+            duration="Watched"  # We don't have duration in schema, fallback to text
+        ))
+
+    return WatchHistoryResponse(
+        success=True,
+        user_name=user_name,
+        total_watched=len(watched_videos_list),
+        watched_videos=watched_videos_list
+    )
 
 
 @router.patch("/users/{user_id}/role", response_model=UserRoleUpdateResponse)

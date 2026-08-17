@@ -112,6 +112,25 @@ class UserOut(BaseModel):
     created_at: Optional[str] = None
 
 
+class UserCreateRequest(BaseModel):
+    email: str
+    password: str
+    role: str = "learner"
+
+    @field_validator("role")
+    @classmethod
+    def role_must_be_valid(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in ("admin", "learner"):
+            raise ValueError("role must be either 'admin' or 'learner'")
+        return v
+
+
+class UserUpdateRequest(BaseModel):
+    email: Optional[str] = None
+    password: Optional[str] = None
+
+
 class UserRoleUpdateRequest(BaseModel):
     role: str
 
@@ -127,6 +146,18 @@ class UserRoleUpdateRequest(BaseModel):
 class UserRoleUpdateResponse(BaseModel):
     user_id: str
     role: str
+
+class WatchedVideo(BaseModel):
+    video_id: str
+    title: str
+    module_name: str
+    duration: str
+
+class WatchHistoryResponse(BaseModel):
+    success: bool
+    user_name: str
+    total_watched: int
+    watched_videos: list[WatchedVideo]
 
 # ── Questions management ──────────────────────────────────────────────────────
 

@@ -259,7 +259,27 @@ async def generate_and_assign_quiz(
         questions = await generate_mixed_quiz(transcript=transcript)
         json_questions = [q.model_dump() for q in questions]
         
-        # 3. Insert into quiz_attempts
+        # 3. Dynamic Randomization
+        import random
+        
+        # Shuffle the overall question pool
+        random.shuffle(json_questions)
+        
+        # Determine dynamic length (between 5 and 8, or max available)
+        total_available = len(json_questions)
+        limit = random.randint(min(5, total_available), min(8, total_available)) if total_available > 0 else 0
+        
+        if limit > 0:
+            json_questions = json_questions[:limit]
+            
+        # Shuffle multiple-choice options for each selected question
+        for q in json_questions:
+            if q.get("question_type") == "mcq" and q.get("options"):
+                # The validation logic in submit-attempt matches string to string, 
+                # so we only need to shuffle the options array itself.
+                random.shuffle(q["options"])
+        
+        # 4. Insert into quiz_attempts
         attempt_resp = supabase.table("quiz_attempts").insert({
             "user_id": req_user_id,
             "video_id": video_id,
@@ -269,7 +289,7 @@ async def generate_and_assign_quiz(
         if not attempt_resp.data:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save quiz attempt")
             
-        # 4. Return to frontend
+        # 5. Return to frontend
         return {
             "quiz_attempt_id": attempt_resp.data[0]["id"],
             "questions": json_questions
@@ -359,8 +379,12 @@ async def submit_attempt(
     if not score_resp.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save quiz score")
         
-    pass_threshold = max(1, round(total * 0.67))
-    passed = score >= pass_threshold
+    pass_percentage = (score / total) * 100 if total > 0 else 0
+    passed = pass_percentage >= 80
+    
+    # Calculate exactly how many questions are needed to hit 80%
+    import math
+    pass_threshold = math.ceil(total * 0.8)
     
     # 4. If passed, mark the video as completed
     if passed:
