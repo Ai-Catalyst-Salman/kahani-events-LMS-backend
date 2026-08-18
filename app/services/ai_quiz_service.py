@@ -65,7 +65,7 @@ async def generate_quiz_from_transcript(transcript: str) -> QuizGenerationResult
     [END OF TRANSCRIPT]
     """
     
-    model = genai.GenerativeModel('gemini-3.5-flash')
+    model = genai.GenerativeModel('gemini-3.5-flash-lite')
     response = model.generate_content(
         prompt,
         generation_config=genai.GenerationConfig(
