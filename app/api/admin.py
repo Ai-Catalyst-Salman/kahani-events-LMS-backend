@@ -35,6 +35,7 @@ from app.schemas.admin import (
     QuestionOut,
     WatchHistoryResponse,
     WatchedVideo,
+    TopPerformer,
 )
 
 router = APIRouter()
@@ -56,6 +57,32 @@ async def admin_overview(admin_user: dict = Depends(require_admin)):
         total_completions=progress_resp.count or 0,
         total_users=users_resp.count or 0,
     )
+
+
+@router.get("/dashboard/top-performers", response_model=list[TopPerformer])
+async def get_top_performers(admin_user: dict = Depends(require_admin)):
+    """Return top performers based on completed modules/videos."""
+    progress_resp = supabase.table("progress").select("user_id").eq("completed", True).execute()
+    progress_data = progress_resp.data or []
+
+    counts = {}
+    for row in progress_data:
+        uid = row["user_id"]
+        counts[uid] = counts.get(uid, 0) + 1
+
+    sorted_users = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    result = []
+    
+    if sorted_users:
+        users_resp = supabase.auth.admin.list_users()
+        email_map = {u.id: u.email for u in users_resp} if users_resp else {}
+        
+        for uid, count in sorted_users:
+            email = email_map.get(uid, "Unknown User")
+            name = email.split("@")[0]
+            result.append(TopPerformer(user_id=uid, name=name, completed_modules=count))
+            
+    return result
 
 
 # ── Courses ───────────────────────────────────────────────────────────────────

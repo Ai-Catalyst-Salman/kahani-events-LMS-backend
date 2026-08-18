@@ -16,6 +16,12 @@ class AdminOverviewResponse(BaseModel):
     total_completions: int
     total_users: int
 
+class TopPerformer(BaseModel):
+    user_id: str
+    name: str
+    completed_modules: int
+
+
 
 # ── Course management ─────────────────────────────────────────────────────────
 
