@@ -64,21 +64,40 @@ async def generate_quiz_from_transcript(transcript: str) -> QuizGenerationResult
     {transcript.strip()}
     [END OF TRANSCRIPT]
     """
+    AVAILABLE_MODELS = [
+        # High Quota / Lite Models (First Priority)
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
+        "gemini-2.5-flash-lite",
+        
+        # Standard Flash Models / Backup (Second Priority)
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3-flash",
+        "gemini-2.5-flash"
+    ]
     
-    model = genai.GenerativeModel('gemini-3.5-flash-lite')
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.GenerationConfig(
-            response_mime_type="application/json",
-            temperature=0.7
-        )
-    )
-    
-    try:
-        return QuizGenerationResult.model_validate_json(response.text)
-    except Exception as e:
-        print(f"Failed to parse AI Quiz JSON. Raw response:\n{response.text}")
-        raise HTTPException(status_code=500, detail="AI generated incomplete quiz data. Please click 'Take Quiz' to try again.")
+    last_exception = None
+    for model_name in AVAILABLE_MODELS:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=0.7
+                )
+            )
+            return QuizGenerationResult.model_validate_json(response.text)
+        except Exception as e:
+            last_exception = e
+            print(f"Model {model_name} failed: {e}. Trying next model...")
+            continue
+            
+    # If all models fail
+    print(f"All Gemini models failed. Last error:\n{last_exception}")
+    raise HTTPException(status_code=500, detail="AI generated incomplete quiz data due to rate limits. Please click 'Take Quiz' to try again.")
 
 async def generate_mixed_quiz(transcript: str) -> List[AIQuestionSchema]:
     # Backward compatibility for the existing /generate-and-save-quiz route
