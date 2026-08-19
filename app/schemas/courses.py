@@ -21,6 +21,7 @@ class CourseOut(BaseModel):
     id: str
     title: str
     description: str | None
+    department: str | None = None
     created_at: datetime
 
 
@@ -28,5 +29,6 @@ class CourseDetailOut(BaseModel):
     id: str
     title: str
     description: str | None
+    department: str | None = None
     created_at: datetime
     videos: list[VideoOut]

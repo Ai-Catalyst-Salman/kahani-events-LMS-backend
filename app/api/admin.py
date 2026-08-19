@@ -61,7 +61,11 @@ async def admin_overview(admin_user: dict = Depends(require_admin)):
 
 @router.get("/dashboard/top-performers", response_model=list[TopPerformer])
 async def get_top_performers(admin_user: dict = Depends(require_admin)):
-    """Return top performers based on completed modules/videos."""
+    """Return top performers based on completed modules/videos with their completion percentage."""
+    # Fetch total platform videos to calculate percentage
+    videos_resp = supabase.table("videos").select("id", count="exact").execute()
+    total_videos = videos_resp.count or 0
+
     progress_resp = supabase.table("progress").select("user_id").eq("completed", True).execute()
     progress_data = progress_resp.data or []
 
@@ -80,7 +84,17 @@ async def get_top_performers(admin_user: dict = Depends(require_admin)):
         for uid, count in sorted_users:
             email = email_map.get(uid, "Unknown User")
             name = email.split("@")[0]
-            result.append(TopPerformer(user_id=uid, name=name, completed_modules=count))
+            
+            percentage = 0
+            if total_videos > 0:
+                percentage = round((count / total_videos) * 100)
+                
+            result.append(TopPerformer(
+                user_id=uid, 
+                name=name, 
+                completed_modules=count,
+                completion_percentage=percentage
+            ))
             
     return result
 
@@ -113,7 +127,11 @@ async def create_course(
     """Create a new course."""
     resp = (
         supabase.table("courses")
-        .insert({"title": body.title, "description": body.description})
+        .insert({
+            "title": body.title, 
+            "description": body.description,
+            "department": body.department
+        })
         .execute()
     )
     if not resp.data:

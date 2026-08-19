@@ -20,6 +20,7 @@ class TopPerformer(BaseModel):
     user_id: str
     name: str
     completed_modules: int
+    completion_percentage: int = 0
 
 
 
@@ -28,6 +29,7 @@ class TopPerformer(BaseModel):
 class CourseCreateRequest(BaseModel):
     title: str
     description: Optional[str] = None
+    department: str = "General"
 
     @field_validator("title")
     @classmethod
