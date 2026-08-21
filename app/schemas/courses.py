@@ -22,6 +22,7 @@ class CourseOut(BaseModel):
     title: str
     description: str | None
     department: str | None = None
+    progression_mode: str | None = "open"
     created_at: datetime
 
 
@@ -30,5 +31,6 @@ class CourseDetailOut(BaseModel):
     title: str
     description: str | None
     department: str | None = None
+    progression_mode: str | None = "open"
     created_at: datetime
     videos: list[VideoOut]

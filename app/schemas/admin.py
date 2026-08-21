@@ -30,6 +30,7 @@ class CourseCreateRequest(BaseModel):
     title: str
     description: Optional[str] = None
     department: str = "General"
+    progression_mode: Optional[str] = "open"
 
     @field_validator("title")
     @classmethod
@@ -51,11 +52,19 @@ class CourseCreateRequest(BaseModel):
             return v or None
         return v
 
+    @field_validator("progression_mode")
+    @classmethod
+    def progression_mode_must_be_valid(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ("open", "locked"):
+            raise ValueError("progression_mode must be 'open' or 'locked'")
+        return v or "open"
+
 
 class CourseCreateResponse(BaseModel):
     id: str
     title: str
     description: Optional[str]
+    progression_mode: Optional[str] = "open"
     created_at: datetime
 
 

@@ -19,7 +19,7 @@ async def list_courses():
     """Return all courses ordered by creation date."""
     response = (
         supabase.table("courses")
-        .select("id, title, description, department, created_at")
+        .select("id, title, description, department, progression_mode, created_at")
         .order("created_at")
         .execute()
     )
@@ -31,7 +31,7 @@ async def get_course(course_id: str):
     """Return a single course with its associated videos."""
     course_response = (
         supabase.table("courses")
-        .select("id, title, description, department, created_at")
+        .select("id, title, description, department, progression_mode, created_at")
         .eq("id", course_id)
         .single()
         .execute()

@@ -130,7 +130,8 @@ async def create_course(
         .insert({
             "title": body.title, 
             "description": body.description,
-            "department": body.department
+            "department": body.department,
+            "progression_mode": body.progression_mode or "open",
         })
         .execute()
     )
