@@ -15,7 +15,8 @@ Admin-only endpoints:
   DELETE /admin/questions/{id}           → delete a question
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from app.core.email_utils import notify_new_course_background, notify_new_video_background
 
 from app.core.auth import require_admin
 from app.core.supabase_client import supabase
@@ -122,6 +123,7 @@ async def list_all_courses(admin_user: dict = Depends(require_admin)):
 @router.post("/courses", response_model=CourseCreateResponse, status_code=201)
 async def create_course(
     body: CourseCreateRequest,
+    background_tasks: BackgroundTasks,
     admin_user: dict = Depends(require_admin),
 ):
     """Create a new course."""
@@ -137,6 +139,10 @@ async def create_course(
     )
     if not resp.data:
         raise HTTPException(status_code=500, detail="Failed to create course")
+        
+    # Trigger background email notification
+    background_tasks.add_task(notify_new_course_background, body.title)
+    
     return resp.data[0]
 
 
@@ -154,6 +160,7 @@ async def delete_course(
 @router.post("/videos", response_model=VideoCreateResponse, status_code=201)
 async def create_video(
     body: VideoCreateRequest,
+    background_tasks: BackgroundTasks,
     admin_user: dict = Depends(require_admin),
 ):
     """Add a video to a course."""
@@ -176,6 +183,10 @@ async def create_video(
     )
     if not resp.data:
         raise HTTPException(status_code=500, detail="Failed to create video")
+        
+    # Trigger background email notification
+    background_tasks.add_task(notify_new_video_background, body.title, str(body.course_id))
+    
     return resp.data[0]
 
 
