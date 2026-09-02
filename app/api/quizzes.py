@@ -167,7 +167,7 @@ async def get_quiz(
 
 
 from app.schemas.quiz_schemas import AIQuizGenerateRequest
-from app.services.ai_quiz_service import generate_mixed_quiz
+from app.services.ai_quiz_service import generate_mixed_quiz, evaluate_quiz_answers_with_ai
 
 @router.post("/video/{video_id}/generate-and-save-quiz")
 async def generate_and_save_quiz(
@@ -299,6 +299,26 @@ async def generate_and_assign_quiz(
         print(f"Error in generate_and_assign_quiz: {str(e)}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal error occurred while generating the quiz. Please try again.")
 
+import difflib
+
+def is_smart_match(user_ans: str, correct_ans: str) -> bool:
+    """Smart comparison for quiz answers handling minor typos and plurals."""
+    user_clean = user_ans.strip().lower()
+    correct_clean = correct_ans.strip().lower()
+    
+    if user_clean == correct_clean:
+        return True
+        
+    # Basic singular/plural check
+    if user_clean + 's' == correct_clean or correct_clean + 's' == user_clean:
+        return True
+    if user_clean + 'es' == correct_clean or correct_clean + 'es' == user_clean:
+        return True
+        
+    # Fuzzy matching for typos
+    similarity = difflib.SequenceMatcher(None, user_clean, correct_clean).ratio()
+    return similarity >= 0.85
+
 class SubmitAttemptRequest(BaseModel):
     quiz_attempt_id: str
     student_answers: dict
@@ -325,17 +345,15 @@ async def submit_attempt(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to submit this attempt")
     
     # 2. Evaluate answers
-    score = 0
     total = len(generated_questions)
-    results = []
+    qa_pairs = []
     
     for i, q in enumerate(generated_questions):
         student_ans = request.student_answers.get(str(i))
         q_type = q.get("question_type", "mcq")
-        is_correct = False
+        user_ans_str = ""
         
         if student_ans is not None:
-            user_ans_str = ""
             if q_type == "mcq":
                 try:
                     idx = int(student_ans)
@@ -356,8 +374,21 @@ async def submit_attempt(
             else:
                 user_ans_str = str(student_ans)
                 
-            correct_ans_str = str(q.get("correct_answer", ""))
-            is_correct = user_ans_str.strip().lower() == correct_ans_str.strip().lower()
+        correct_ans_str = str(q.get("correct_answer", ""))
+        qa_pairs.append({
+            "index": str(i),
+            "question": q.get("question", ""),
+            "correct_answer": correct_ans_str,
+            "user_answer": user_ans_str
+        })
+        
+    ai_evaluations = await evaluate_quiz_answers_with_ai(qa_pairs)
+    
+    score = 0
+    results = []
+    
+    for i, q in enumerate(generated_questions):
+        is_correct = bool(ai_evaluations.get(str(i), False))
         if is_correct:
             score += 1
             

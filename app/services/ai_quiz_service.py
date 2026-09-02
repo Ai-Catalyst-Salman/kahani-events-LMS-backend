@@ -126,3 +126,49 @@ async def generate_mixed_quiz(transcript: str) -> List[AIQuestionSchema]:
             )
         )
     return mapped_questions
+
+import json
+
+async def evaluate_quiz_answers_with_ai(qa_pairs: list[dict]) -> dict:
+    if not qa_pairs:
+        return {}
+        
+    prompt = f"""
+    You are a lenient and highly intelligent teacher grading a quiz. I will give you a list of Questions, the Target Answer, and the User's Answer. Evaluate if the User's Answer is conceptually correct or means the same thing as the Target Answer. Forgive spelling, grammar, and extra/missing words as long as the core intent is correct. 
+    
+    Return a strict JSON dictionary where keys are the question indexes (as strings) and values are boolean (true if correct, false if incorrect).
+    
+    Data:
+    {json.dumps(qa_pairs, indent=2)}
+    """
+    
+    AVAILABLE_MODELS = [
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
+        "gemini-2.5-flash-lite",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash",
+        "gemini-3-flash",
+        "gemini-2.5-flash"
+    ]
+    
+    last_exception = None
+    for model_name in AVAILABLE_MODELS:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1
+                )
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            last_exception = e
+            print(f"Evaluation model {model_name} failed: {e}. Trying next...")
+            continue
+            
+    print(f"All Gemini models failed for evaluation. Last error:\n{last_exception}")
+    return {}
